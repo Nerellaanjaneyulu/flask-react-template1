@@ -1,19 +1,30 @@
-name: Deploy to EC2
+#!/bin/bash
+set -e  # exit on error
 
-on:
-  push:
-    branches: [ "main" ]
+echo "[INFO] Pulling latest code..."
+git pull origin main
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd flask-react-template
-            ./deploy.sh
+echo "[INFO] Building React frontend..."
+cd frontend
+npm ci
+npm run build
+sudo rm -rf /var/www/html/*
+sudo cp -r build/* /var/www/html/
+cd ..
+
+echo "[INFO] Setting up Python backend..."
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+echo "[INFO] Restarting backend..."
+pkill -f "gunicorn" || true
+gunicorn --bind unix:/tmp/app.sock app:app &
+
+cd ..
+
+echo "[INFO] Reloading Nginx..."
+sudo nginx -s reload
+
+echo "✅ Deployment complete!"
